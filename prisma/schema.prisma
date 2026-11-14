@@ -1,0 +1,214 @@
+// Banco do Balcão. Dinheiro sempre em centavos (Int).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Papel {
+  ADMIN
+  VENDEDOR
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senhaHash String
+  papel     Papel    @default(VENDEDOR)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  sessoes           Sessao[]
+  vendas            Venda[]           @relation("VendaVendedor")
+  cancelamentos     Venda[]           @relation("VendaCanceladaPor")
+  movimentosEstoque MovimentoEstoque[]
+  caixasAbertos     Caixa[]           @relation("CaixaAbertoPor")
+  caixasFechados    Caixa[]           @relation("CaixaFechadoPor")
+  movimentosCaixa   MovimentoCaixa[]
+}
+
+/// Sessão de login. O cookie guarda um token aleatório; aqui fica só o hash dele.
+model Sessao {
+  id        String   @id // sha256 do token
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiraEm  DateTime
+  criadaEm  DateTime @default(now())
+
+  @@index([usuarioId])
+}
+
+model Categoria {
+  id       String    @id @default(cuid())
+  nome     String    @unique
+  produtos Produto[]
+}
+
+model Produto {
+  id            String     @id @default(cuid())
+  codigo        String     @unique // código de barras ou código interno
+  nome          String
+  descricao     String?
+  categoriaId   String?
+  categoria     Categoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  unidade       String     @default("un")
+  precoCusto    Int
+  precoVenda    Int
+  estoque       Int        @default(0)
+  estoqueMinimo Int        @default(0)
+  ativo         Boolean    @default(true)
+  criadoEm      DateTime   @default(now())
+  atualizadoEm  DateTime   @updatedAt
+
+  itensVenda ItemVenda[]
+  movimentos MovimentoEstoque[]
+
+  @@index([nome])
+  @@index([categoriaId])
+}
+
+enum TipoMovimento {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  VENDA
+  CANCELAMENTO
+}
+
+/// Histórico de tudo que mexe no estoque (ninguém altera o saldo "na mão").
+model MovimentoEstoque {
+  id         String        @id @default(cuid())
+  produtoId  String
+  produto    Produto       @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  tipo       TipoMovimento
+  quantidade Int // variação: positiva entra, negativa sai
+  saldoApos  Int
+  motivo     String?
+  usuarioId  String
+  usuario    Usuario       @relation(fields: [usuarioId], references: [id])
+  vendaId    String?
+  venda      Venda?        @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+  criadoEm   DateTime      @default(now())
+
+  @@index([produtoId, criadoEm])
+}
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nome      String
+  telefone  String?
+  documento String?  @unique // CPF ou CNPJ, só números
+  email     String?
+  criadoEm  DateTime @default(now())
+  vendas    Venda[]
+
+  @@index([nome])
+}
+
+enum StatusVenda {
+  CONCLUIDA
+  CANCELADA
+}
+
+model Venda {
+  id                 String      @id @default(cuid())
+  numero             Int         @unique @default(autoincrement())
+  caixaId            String
+  caixa              Caixa       @relation(fields: [caixaId], references: [id])
+  vendedorId         String
+  vendedor           Usuario     @relation("VendaVendedor", fields: [vendedorId], references: [id])
+  clienteId          String?
+  cliente            Cliente?    @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  subtotal           Int
+  desconto           Int         @default(0)
+  total              Int
+  troco              Int         @default(0)
+  status             StatusVenda @default(CONCLUIDA)
+  canceladaEm        DateTime?
+  canceladaPorId     String?
+  canceladaPor       Usuario?    @relation("VendaCanceladaPor", fields: [canceladaPorId], references: [id])
+  motivoCancelamento String?
+  criadoEm           DateTime    @default(now())
+
+  itens      ItemVenda[]
+  pagamentos Pagamento[]
+  movimentos MovimentoEstoque[]
+
+  @@index([criadoEm])
+  @@index([caixaId])
+}
+
+model ItemVenda {
+  id            String  @id @default(cuid())
+  vendaId       String
+  venda         Venda   @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto @relation(fields: [produtoId], references: [id])
+  nomeProduto   String // nome na hora da venda (o produto pode mudar depois)
+  quantidade    Int
+  precoUnitario Int
+  custoUnitario Int
+  total         Int
+
+  @@index([produtoId])
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO_DEBITO
+  CARTAO_CREDITO
+}
+
+model Pagamento {
+  id      String         @id @default(cuid())
+  vendaId String
+  venda   Venda          @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  forma   FormaPagamento
+  valor   Int
+}
+
+enum StatusCaixa {
+  ABERTO
+  FECHADO
+}
+
+model Caixa {
+  id             String      @id @default(cuid())
+  status         StatusCaixa @default(ABERTO)
+  abertoPorId    String
+  abertoPor      Usuario     @relation("CaixaAbertoPor", fields: [abertoPorId], references: [id])
+  abertoEm       DateTime    @default(now())
+  valorAbertura  Int
+  fechadoPorId   String?
+  fechadoPor     Usuario?    @relation("CaixaFechadoPor", fields: [fechadoPorId], references: [id])
+  fechadoEm      DateTime?
+  valorEsperado  Int?
+  valorContado   Int?
+  observacao     String?
+
+  vendas     Venda[]
+  movimentos MovimentoCaixa[]
+}
+
+enum TipoMovimentoCaixa {
+  SANGRIA
+  SUPRIMENTO
+}
+
+model MovimentoCaixa {
+  id        String             @id @default(cuid())
+  caixaId   String
+  caixa     Caixa              @relation(fields: [caixaId], references: [id], onDelete: Cascade)
+  tipo      TipoMovimentoCaixa
+  valor     Int
+  motivo    String
+  usuarioId String
+  usuario   Usuario            @relation(fields: [usuarioId], references: [id])
+  criadoEm  DateTime           @default(now())
+}
