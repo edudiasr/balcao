@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@theme {
+  --color-marca-50: #ecfdf5;
+  --color-marca-100: #d1fae5;
+  --color-marca-500: #10b981;
+  --color-marca-600: #059669;
+  --color-marca-700: #047857;
+  --color-marca-900: #064e3b;
+}
+
+body {
+  background: #f6f7f9;
+  color: #18181b;
+}
+
+/* números alinhados em tabelas de dinheiro */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* dialog nativo usado nos modais */
+dialog::backdrop {
+  background: rgb(24 24 27 / 0.45);
+}
