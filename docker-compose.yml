@@ -1,0 +1,44 @@
+# Sobe tudo com um comando:  docker compose up --build
+# Depois abra http://localhost:3000 (os dados de exemplo entram pelo serviço "seed").
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: balcao
+      POSTGRES_PASSWORD: balcao
+      POSTGRES_DB: balcao
+    ports:
+      - "5433:5432"
+    volumes:
+      - dados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U balcao"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # aplica as migrações e coloca os dados de exemplo (roda uma vez e termina)
+  seed:
+    build:
+      context: .
+      target: deps
+    environment:
+      DATABASE_URL: postgresql://balcao:balcao@db:5432/balcao?schema=public
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://balcao:balcao@db:5432/balcao?schema=public
+    ports:
+      - "3000:3000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  dados:
